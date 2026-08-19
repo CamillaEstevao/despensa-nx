@@ -33,6 +33,17 @@ const UNIDADES = [
   ["g", "Gramas"], ["litro", "Litro"], ["ml", "mL"], ["caixa", "Caixa"], ["duzia", "Dúzia"],
 ];
 
+
+const UNIDADES_INTEIRAS = new Set(["unidade", "kit", "caixa", "duzia"]);
+
+function passoQuantidade(unidade) {
+  if (unidade === "g") return 50;
+  if (unidade === "ml") return 100;
+  if (unidade === "kg" || unidade === "litro") return 0.1;
+  if (unidade === "pacote") return 0.5;
+  return 1;
+}
+
 function hojeISO() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
@@ -264,11 +275,20 @@ export default function Produtos() {
             <span className="text-sm font-normal text-gray-400"> de {formatarQuantidade(original)}</span>
           </p>
           {!historico && (
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              <button onClick={() => atualizarQuantidade(lote, atual / 2)} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">Metade</button>
-              <button onClick={() => atualizarQuantidade(lote, Math.max(0, atual - 1))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">− 1</button>
-              <button onClick={() => atualizarQuantidade(lote, 0)} className="rounded-xl border border-red-100 bg-red-50 p-2 text-xs font-bold text-red-600">Acabou</button>
-            </div>
+            UNIDADES_INTEIRAS.has(lote.unidade_medida) ? (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <button onClick={() => atualizarQuantidade(lote, Math.max(0, atual - 1))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">− 1</button>
+                <button onClick={() => atualizarQuantidade(lote, atual + 1)} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">+ 1</button>
+                <button onClick={() => atualizarQuantidade(lote, 0)} className="rounded-xl border border-red-100 bg-red-50 p-2 text-xs font-bold text-red-600">Acabou</button>
+              </div>
+            ) : (
+              <div className="mt-2 grid grid-cols-4 gap-2">
+                <button onClick={() => atualizarQuantidade(lote, atual / 2)} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">Metade</button>
+                <button onClick={() => atualizarQuantidade(lote, Math.max(0, atual - passoQuantidade(lote.unidade_medida)))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">−</button>
+                <button onClick={() => atualizarQuantidade(lote, atual + passoQuantidade(lote.unidade_medida))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">+</button>
+                <button onClick={() => atualizarQuantidade(lote, 0)} className="rounded-xl border border-red-100 bg-red-50 p-2 text-xs font-bold text-red-600">Acabou</button>
+              </div>
+            )
           )}
         </div>
 

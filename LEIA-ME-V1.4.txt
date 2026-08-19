@@ -1,0 +1,10 @@
+DESPENSA NX v1.4
+
+Ajuste dos atalhos de quantidade:
+- Unidade, Kit, Caixa e Dúzia: -1, +1, Acabou
+- Pacote: Metade, -, +, Acabou (passo 0,5)
+- Kg e Litro: Metade, -, +, Acabou (passo 0,1)
+- Gramas: Metade, -, +, Acabou (passo 50 g)
+- mL: Metade, -, +, Acabou (passo 100 mL)
+
+Não exige alteração no Supabase.
