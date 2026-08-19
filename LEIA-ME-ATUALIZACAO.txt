@@ -1,0 +1,21 @@
+DESPENSA NX 1.1 - PUSH + NOVA COR
+
+1) Copie TODOS os arquivos/pastas deste pacote para dentro de C:\Projetos\despensa-nx e aceite substituir.
+2) No terminal dessa pasta execute: npm install
+3) No Supabase > SQL Editor, execute todo o arquivo supabase_push_setup.sql.
+4) No terminal execute: npm run generate:vapid
+5) Cadastre as chaves na Vercel (Environment Variables):
+   VITE_VAPID_PUBLIC_KEY = public key gerada
+   VAPID_PUBLIC_KEY = a mesma public key
+   VAPID_PRIVATE_KEY = private key gerada
+   SUPABASE_URL = URL do projeto Supabase
+   SUPABASE_SECRET_KEY = Secret key do Supabase (NUNCA colocar no GitHub)
+   CRON_SECRET = uma senha longa aleatoria
+   VAPID_SUBJECT = mailto:seu-email (opcional)
+6) Suba as alterações:
+   git add .
+   git commit -m "Push de vencimentos e nova identidade visual"
+   git push
+7) Aguarde o redeploy da Vercel. No celular, abra o PWA > Ajustes > Ativar alertas no celular.
+
+O cron está configurado para 12:00 UTC, aproximadamente 09:00 em São Paulo, uma vez por dia.

@@ -1,0 +1,25 @@
+DESPENSA NX 1.2 — PRODUTOS + ENTRADAS/LOTES
+
+O que mudou:
+- O mesmo produto pode ter várias compras/entradas.
+- Cada entrada mantém marca, data da compra e vencimento próprios.
+- Quantidade comprada e quantidade restante são separadas.
+- Botões rápidos: Metade, -1 e Acabou.
+- A tela Produtos agrupa entradas pelo nome do produto.
+- A lista de compras soma o estoque das entradas do mesmo produto/unidade.
+- Vencimentos e Push ignoram entradas cuja quantidade restante é zero.
+- Os produtos já cadastrados são preservados.
+
+ANTES DE ABRIR A NOVA VERSÃO:
+1) Supabase > SQL Editor > New query.
+2) Abra supabase_lotes_setup.sql.
+3) Copie tudo, cole no SQL Editor e clique Run.
+4) Depois substitua os arquivos do projeto local pelos desta versão.
+5) npm install
+6) npm run build
+7) git add .
+8) git commit -m "Adiciona controle por lotes e quantidade restante"
+9) git push
+
+IMPORTANTE:
+Não apague a tabela lar_produtos. O SQL apenas adiciona colunas e converte os registros existentes na primeira entrada/lote de cada produto.
