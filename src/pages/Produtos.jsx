@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Archive,
   Camera,
   ChevronDown,
   ChevronUp,
+  Clock3,
   Image,
+  Layers3,
   Package,
   Pencil,
   Plus,
@@ -15,7 +18,7 @@ import {
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import BottomMenu from "../components/BottomMenu";
 import { supabase } from "../services/supabase";
-import { agruparProdutos } from "../utils/produtos";
+import { agruparProdutos, quantidadeOriginal, quantidadeRestante } from "../utils/produtos";
 import {
   diasAlertaSalvos,
   formatarDataBR,
@@ -34,9 +37,17 @@ function hojeISO() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
+function resumoEstoque(grupo) {
+  if (!grupo.estoquePorUnidade?.length) return "Sem estoque";
+  return grupo.estoquePorUnidade
+    .map(({ quantidade, unidade_medida }) => `${formatarQuantidade(quantidade)} ${rotuloUnidade(unidade_medida, quantidade)}`)
+    .join(" + ");
+}
+
 export default function Produtos() {
   const [lotes, setLotes] = useState([]);
   const [abertos, setAbertos] = useState([]);
+  const [historicosAbertos, setHistoricosAbertos] = useState([]);
   const [abrirForm, setAbrirForm] = useState(false);
   const [editando, setEditando] = useState(null);
   const [escaneando, setEscaneando] = useState(false);
@@ -47,7 +58,7 @@ export default function Produtos() {
   const [nome, setNome] = useState("");
   const [marca, setMarca] = useState("");
   const [codigoBarras, setCodigoBarras] = useState("");
-  const [quantidadeOriginal, setQuantidadeOriginal] = useState("");
+  const [quantidadeOriginalForm, setQuantidadeOriginalForm] = useState("");
   const [quantidadeAtual, setQuantidadeAtual] = useState("");
   const [unidadeMedida, setUnidadeMedida] = useState("unidade");
   const [categoria, setCategoria] = useState("Despensa");
@@ -131,7 +142,7 @@ export default function Produtos() {
   }
 
   function limparForm(fechar = true) {
-    setNome(""); setMarca(""); setCodigoBarras(""); setQuantidadeOriginal(""); setQuantidadeAtual("");
+    setNome(""); setMarca(""); setCodigoBarras(""); setQuantidadeOriginalForm(""); setQuantidadeAtual("");
     setUnidadeMedida("unidade"); setCategoria("Despensa"); setVencimento(""); setDataCompra(hojeISO());
     setEstoqueMinimo("1"); setObservacao(""); setFoto(""); setArquivo(null); setPreview(""); setEditando(null); setSalvando(false);
     if (fechar) setAbrirForm(false);
@@ -140,24 +151,27 @@ export default function Produtos() {
   function abrirNovaEntrada(grupo = null) {
     limparForm(false);
     if (grupo) {
-      const referencia = grupo.lotes[0];
+      const referencia = grupo.lotesAtivos[0] || grupo.lotes[0];
       setNome(grupo.nome || "");
+      setMarca(referencia?.marca || "");
       setCategoria(referencia?.categoria || "Despensa");
       setUnidadeMedida(referencia?.unidade_medida || "unidade");
       setEstoqueMinimo(String(referencia?.estoque_minimo ?? 1));
       setFoto(referencia?.foto || "");
       setPreview(referencia?.foto || "");
+      setCodigoBarras(referencia?.codigo_barras || "");
     }
     setAbrirForm(true);
   }
 
   function editarLote(lote) {
     setEditando(lote);
+    const atual = quantidadeRestante(lote);
+    const original = quantidadeOriginal(lote);
     setNome(lote.nome || ""); setMarca(lote.marca || ""); setCodigoBarras(lote.codigo_barras || "");
-    setQuantidadeOriginal(String(lote.quantidade_original ?? lote.quantidade ?? ""));
-    setQuantidadeAtual(String(lote.quantidade ?? "")); setUnidadeMedida(lote.unidade_medida || "unidade");
-    setCategoria(lote.categoria || "Despensa"); setVencimento(lote.vencimento || "");
-    setDataCompra(lote.data_compra || String(lote.created_at || "").slice(0, 10) || hojeISO());
+    setQuantidadeOriginalForm(String(original)); setQuantidadeAtual(String(atual));
+    setUnidadeMedida(lote.unidade_medida || "unidade"); setCategoria(lote.categoria || "Despensa");
+    setVencimento(lote.vencimento || ""); setDataCompra(lote.data_compra || String(lote.created_at || "").slice(0, 10) || hojeISO());
     setEstoqueMinimo(String(lote.estoque_minimo ?? 1)); setObservacao(lote.observacao || "");
     setFoto(lote.foto || ""); setPreview(lote.foto || ""); setArquivo(null); setAbrirForm(true);
   }
@@ -165,14 +179,14 @@ export default function Produtos() {
   async function salvarEntrada() {
     if (!nome.trim()) return alert("Digite o nome do produto.");
     if (quantidadeAtual === "" || Number(quantidadeAtual) < 0) return alert("Informe a quantidade que ainda resta.");
-    if (quantidadeOriginal === "" || Number(quantidadeOriginal) < 0) return alert("Informe a quantidade comprada.");
+    if (quantidadeOriginalForm === "" || Number(quantidadeOriginalForm) < 0) return alert("Informe a quantidade comprada.");
     setSalvando(true);
 
     try {
       const fotoFinal = await enviarFoto();
       const payload = {
         nome: nome.trim(), marca: marca.trim() || null, codigo_barras: codigoBarras.trim() || null,
-        quantidade: Number(quantidadeAtual || 0), quantidade_original: Number(quantidadeOriginal || 0),
+        quantidade: Number(quantidadeAtual || 0), quantidade_original: Number(quantidadeOriginalForm || 0),
         unidade_medida: unidadeMedida, categoria, vencimento: vencimento || null, data_compra: dataCompra || hojeISO(),
         estoque_minimo: Number(estoqueMinimo || 0), observacao: observacao.trim() || null,
         foto: fotoFinal || foto || null, updated_at: new Date().toISOString(),
@@ -202,7 +216,7 @@ export default function Produtos() {
   }
 
   async function excluirLote(id) {
-    if (!confirm("Deseja excluir esta entrada/compra?")) return;
+    if (!confirm("Deseja excluir esta compra do histórico?")) return;
     const { error } = await supabase.from("lar_produtos").delete().eq("id", id);
     if (error) return alert(error.message);
     setLotes((lista) => lista.filter((lote) => lote.id !== id));
@@ -212,16 +226,66 @@ export default function Produtos() {
     setAbertos((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
   }
 
+  function alternarHistorico(chave) {
+    setHistoricosAbertos((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
+  }
+
   const grupos = agruparProdutos(lotes)
     .filter((grupo) => {
       const termo = busca.trim().toLowerCase();
-      const texto = `${grupo.nome} ${grupo.marcas.join(" ")}`.toLowerCase();
+      const texto = `${grupo.nome} ${grupo.marcas.join(" ")} ${grupo.lotes.map((l) => l.marca || "").join(" ")}`.toLowerCase();
       const categoriaOk = categoriaFiltro === "Todos" || grupo.lotes.some((l) => l.categoria === categoriaFiltro);
       return texto.includes(termo) && categoriaOk;
     })
     .sort((a, b) => a.nome.localeCompare(b.nome));
 
   const categoriasFiltro = ["Todos", ...CATEGORIAS];
+
+  function renderLote(lote, historico = false) {
+    const status = statusVencimento(lote.vencimento, diasAlerta);
+    const original = quantidadeOriginal(lote);
+    const atual = quantidadeRestante(lote);
+    return (
+      <div key={lote.id} className={`rounded-2xl border p-3 ${historico ? "bg-gray-50 opacity-80" : "bg-white"}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-bold">{lote.marca || "Sem marca"}</p>
+            <p className="text-xs text-gray-500">Compra de {formatarDataBR(lote.data_compra || String(lote.created_at || "").slice(0, 10))}</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${historico ? "bg-gray-200 text-gray-600" : "bg-[#EEEFFF] text-[#4A4BCB]"}`}>
+            {historico ? "Finalizado" : "Lote atual"}
+          </span>
+        </div>
+
+        <div className="mt-3 rounded-2xl bg-gray-50 p-3">
+          <p className="text-xs text-gray-500">{historico ? "Quantidade ao finalizar" : "Quantidade restante"}</p>
+          <p className="text-xl font-bold text-[#4A4BCB]">
+            {formatarQuantidade(atual)} {rotuloUnidade(lote.unidade_medida, atual)}
+            <span className="text-sm font-normal text-gray-400"> de {formatarQuantidade(original)}</span>
+          </p>
+          {!historico && (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <button onClick={() => atualizarQuantidade(lote, atual / 2)} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">Metade</button>
+              <button onClick={() => atualizarQuantidade(lote, Math.max(0, atual - 1))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">− 1</button>
+              <button onClick={() => atualizarQuantidade(lote, 0)} className="rounded-xl border border-red-100 bg-red-50 p-2 text-xs font-bold text-red-600">Acabou</button>
+            </div>
+          )}
+        </div>
+
+        {lote.vencimento && (
+          <div className={`mt-3 rounded-2xl border p-3 ${status.corFundo} ${status.corBorda}`}>
+            <p className="text-xs text-gray-500">Vencimento: {formatarDataBR(lote.vencimento)}</p>
+            <p className={`font-bold ${status.corTexto}`}>{status.texto}</p>
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button onClick={() => editarLote(lote)} className="flex items-center justify-center gap-2 rounded-xl border p-2 font-bold text-[#5B5CE2]"><Pencil size={16} /> Editar</button>
+          <button onClick={() => excluirLote(lote.id)} className="flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 p-2 font-bold text-red-500"><Trash2 size={16} /> Excluir</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F7FC] pb-28">
@@ -231,7 +295,7 @@ export default function Produtos() {
           <div>
             <p className="text-sm text-white/70">Despensa NX</p>
             <h1 className="text-3xl font-bold">Produtos</h1>
-            <p className="text-sm text-white/70">{agruparProdutos(lotes).length} produtos • {lotes.length} entradas</p>
+            <p className="text-sm text-white/70">{agruparProdutos(lotes).length} produtos • {lotes.filter((l) => quantidadeRestante(l) > 0).length} lotes ativos</p>
           </div>
         </div>
       </header>
@@ -257,60 +321,48 @@ export default function Produtos() {
           <div className="space-y-4">
             {grupos.map((grupo) => {
               const expandido = abertos.includes(grupo.chave);
-              const lotesAtivos = grupo.lotes.filter((l) => Number(l.quantidade || 0) > 0);
+              const historicoExpandido = historicosAbertos.includes(grupo.chave);
               return (
                 <article key={grupo.chave} className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-                  <button onClick={() => alternarGrupo(grupo.chave)} className="flex w-full items-center gap-4 p-4 text-left">
-                    <img src={grupo.foto || "/favicon.svg"} alt={grupo.nome} className="h-20 w-20 rounded-2xl bg-gray-100 object-cover" />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="truncate text-xl font-bold">{grupo.nome}</h2>
-                      <p className="truncate text-sm text-[#5B5CE2]">{grupo.marcas.length ? grupo.marcas.join(" • ") : "Sem marca"}</p>
-                      <p className="mt-1 text-xs text-gray-500">{lotesAtivos.length} entrada(s) com estoque • {grupo.totalLotes} no histórico</p>
+                  <div className="p-4">
+                    <div className="flex items-center gap-4">
+                      <img src={grupo.foto || "/favicon.svg"} alt={grupo.nome} className="h-20 w-20 rounded-2xl bg-gray-100 object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <h2 className="truncate text-xl font-bold">{grupo.nome}</h2>
+                        <p className="truncate text-sm text-[#5B5CE2]">{grupo.marcas.length ? grupo.marcas.join(" • ") : "Sem marca no estoque atual"}</p>
+                        <p className="mt-2 font-bold text-gray-800">Em casa: {resumoEstoque(grupo)}</p>
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span>{grupo.totalLotesAtivos} {grupo.totalLotesAtivos === 1 ? "lote ativo" : "lotes ativos"}</span>
+                          {grupo.proximoVencimento && <span>Próx. venc.: {formatarDataBR(grupo.proximoVencimento)}</span>}
+                        </div>
+                      </div>
                     </div>
-                    {expandido ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
-                  </button>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button onClick={() => alternarGrupo(grupo.chave)} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#5B5CE2] p-3 font-bold text-[#4A4BCB]">
+                        <Layers3 size={18} /> {expandido ? "Ocultar lotes" : "Ver lotes"} {expandido ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+                      </button>
+                      <button onClick={() => abrirNovaEntrada(grupo)} className="flex items-center justify-center gap-2 rounded-2xl bg-[#5B5CE2] p-3 font-bold text-white"><Plus size={18} /> Nova compra</button>
+                    </div>
+                  </div>
 
                   {expandido && (
                     <div className="border-t bg-[#FAFAFE] p-3">
-                      <button onClick={() => abrirNovaEntrada(grupo)} className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#5B5CE2] p-3 font-bold text-white"><Plus size={18} /> Nova compra deste produto</button>
-                      <div className="space-y-3">
-                        {grupo.lotes.map((lote) => {
-                          const status = statusVencimento(lote.vencimento, diasAlerta);
-                          const original = Number(lote.quantidade_original ?? lote.quantidade ?? 0);
-                          const atual = Number(lote.quantidade || 0);
-                          return (
-                            <div key={lote.id} className="rounded-2xl border bg-white p-3">
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-bold">{lote.marca || "Sem marca"}</p>
-                                  <p className="text-xs text-gray-500">Comprado em {formatarDataBR(lote.data_compra || String(lote.created_at || "").slice(0, 10))}</p>
-                                </div>
-                                <span className="rounded-full bg-[#EEEFFF] px-3 py-1 text-xs font-bold text-[#4A4BCB]">Entrada #{lote.id}</span>
-                              </div>
+                      {grupo.lotesAtivos.length === 0 ? (
+                        <div className="rounded-2xl bg-white p-4 text-center text-sm text-gray-500">Nenhum lote com estoque. Use “Nova compra” para adicionar.</div>
+                      ) : (
+                        <div className="space-y-3">{grupo.lotesAtivos.map((lote) => renderLote(lote, false))}</div>
+                      )}
 
-                              <div className="mt-3 rounded-2xl bg-gray-50 p-3">
-                                <p className="text-xs text-gray-500">Quantidade restante</p>
-                                <p className="text-xl font-bold text-[#4A4BCB]">{formatarQuantidade(atual)} {rotuloUnidade(lote.unidade_medida, atual)} <span className="text-sm font-normal text-gray-400">de {formatarQuantidade(original)}</span></p>
-                                <div className="mt-2 grid grid-cols-3 gap-2">
-                                  <button onClick={() => atualizarQuantidade(lote, atual / 2)} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">Metade</button>
-                                  <button onClick={() => atualizarQuantidade(lote, Math.max(0, atual - 1))} className="rounded-xl border bg-white p-2 text-xs font-bold text-gray-600">− 1</button>
-                                  <button onClick={() => atualizarQuantidade(lote, 0)} className="rounded-xl border border-red-100 bg-red-50 p-2 text-xs font-bold text-red-600">Acabou</button>
-                                </div>
-                              </div>
-
-                              <div className={`mt-3 rounded-2xl border p-3 ${status.corFundo} ${status.corBorda}`}>
-                                <p className="text-xs text-gray-500">Vencimento: {formatarDataBR(lote.vencimento)}</p>
-                                <p className={`font-bold ${status.corTexto}`}>{status.texto}</p>
-                              </div>
-
-                              <div className="mt-3 grid grid-cols-2 gap-2">
-                                <button onClick={() => editarLote(lote)} className="flex items-center justify-center gap-2 rounded-xl border p-2 font-bold text-[#5B5CE2]"><Pencil size={16} /> Editar</button>
-                                <button onClick={() => excluirLote(lote.id)} className="flex items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 p-2 font-bold text-red-500"><Trash2 size={16} /> Excluir</button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {grupo.totalHistorico > 0 && (
+                        <div className="mt-3">
+                          <button onClick={() => alternarHistorico(grupo.chave)} className="flex w-full items-center justify-between rounded-2xl bg-white p-3 text-left font-bold text-gray-600 shadow-sm">
+                            <span className="flex items-center gap-2"><Archive size={18} /> Histórico ({grupo.totalHistorico})</span>
+                            {historicoExpandido ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                          </button>
+                          {historicoExpandido && <div className="mt-3 space-y-3">{grupo.lotesHistorico.map((lote) => renderLote(lote, true))}</div>}
+                        </div>
+                      )}
                     </div>
                   )}
                 </article>
@@ -327,7 +379,7 @@ export default function Produtos() {
           <div className="w-full max-w-md rounded-3xl bg-white p-4">
             <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Ler código de barras</h2><button onClick={() => { pararScanner(); setEscaneando(false); }}><X /></button></div>
             <video ref={videoRef} className="h-72 w-full rounded-2xl bg-black object-cover" muted playsInline />
-            <p className="mt-3 text-center text-sm text-gray-500">Se o código já existir, os dados do produto serão preenchidos e uma nova entrada será criada.</p>
+            <p className="mt-3 text-center text-sm text-gray-500">Se o código já existir, os dados do produto serão preenchidos e uma nova compra será criada.</p>
           </div>
         </div>
       )}
@@ -336,7 +388,7 @@ export default function Produtos() {
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center">
           <div className="max-h-[95vh] w-full overflow-y-auto rounded-t-3xl bg-white p-4 pb-8 sm:max-w-md sm:rounded-3xl">
             <div className="mb-4 flex items-center justify-between">
-              <div><h2 className="text-xl font-bold">{editando ? "Editar entrada" : "Nova compra / entrada"}</h2><p className="text-sm text-gray-500">Cada compra fica separada por marca e vencimento.</p></div>
+              <div><h2 className="text-xl font-bold">{editando ? "Editar compra" : "Nova compra"}</h2><p className="text-sm text-gray-500">Cada compra mantém sua própria marca, quantidade e vencimento.</p></div>
               <button onClick={() => limparForm()}><X /></button>
             </div>
 
@@ -356,7 +408,7 @@ export default function Produtos() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-sm font-bold text-gray-600">Qtd. comprada *</label><input type="number" step="any" min="0" value={quantidadeOriginal} onChange={(e) => { setQuantidadeOriginal(e.target.value); if (!editando) setQuantidadeAtual(e.target.value); }} placeholder="Ex.: 5" className="w-full rounded-xl border p-3" /></div>
+                <div><label className="mb-1 block text-sm font-bold text-gray-600">Qtd. comprada *</label><input type="number" step="any" min="0" value={quantidadeOriginalForm} onChange={(e) => { setQuantidadeOriginalForm(e.target.value); if (!editando) setQuantidadeAtual(e.target.value); }} placeholder="Ex.: 5" className="w-full rounded-xl border p-3" /></div>
                 <div><label className="mb-1 block text-sm font-bold text-gray-600">Qtd. que resta *</label><input type="number" step="any" min="0" value={quantidadeAtual} onChange={(e) => setQuantidadeAtual(e.target.value)} placeholder="Ex.: 2,5" className="w-full rounded-xl border p-3" /></div>
               </div>
 
@@ -366,9 +418,9 @@ export default function Produtos() {
                 <div><label className="mb-1 block text-sm font-bold text-gray-600">Estoque mínimo</label><input type="number" step="any" min="0" value={estoqueMinimo} onChange={(e) => setEstoqueMinimo(e.target.value)} className="w-full rounded-xl border p-3" /></div>
               </div>
               <div><label className="mb-1 block text-sm font-bold text-gray-600">Código de barras</label><input value={codigoBarras} onChange={(e) => setCodigoBarras(e.target.value)} className="w-full rounded-xl border p-3" /></div>
-              <div><label className="mb-1 block text-sm font-bold text-gray-600">Observação</label><textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Ex.: pacote já aberto" className="min-h-20 w-full rounded-xl border p-3" /></div>
+              <div><label className="mb-1 block text-sm font-bold text-gray-600">Observação</label><textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} rows={3} placeholder="Ex.: 1 pacote aberto" className="w-full rounded-xl border p-3" /></div>
 
-              <button onClick={salvarEntrada} disabled={salvando} className="w-full rounded-2xl bg-[#5B5CE2] p-4 font-bold text-white disabled:opacity-50">{salvando ? "Salvando..." : editando ? "Salvar alterações" : "Adicionar entrada"}</button>
+              <button onClick={salvarEntrada} disabled={salvando} className="w-full rounded-2xl bg-[#5B5CE2] p-4 font-bold text-white disabled:opacity-50">{salvando ? "Salvando..." : editando ? "Salvar alterações" : "Adicionar compra"}</button>
             </div>
           </div>
         </div>

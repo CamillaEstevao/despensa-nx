@@ -1,0 +1,26 @@
+DESPENSA NX v1.3 — CORREÇÕES DE PRODUTOS / LOTES
+
+O que mudou:
+- Corrigida a leitura da quantidade restante no resumo de Produtos.
+- A tela principal não exibe mais todos os lotes de uma vez.
+- Cada produto mostra um resumo: estoque total, lotes ativos e próximo vencimento.
+- Botão “Ver lotes” abre somente os lotes com saldo.
+- Compras zeradas ficam recolhidas em “Histórico”.
+- “Entrada #...” foi removido. O app usa “Lote atual” e a data da compra.
+- “Nova compra” cria um novo lote sem misturar vencimentos.
+- Lista de compras soma apenas o saldo atual dos lotes.
+- Mantidos Push Notifications e “Testar notificação agora”.
+
+NÃO precisa executar um novo SQL se você já executou:
+- supabase_lotes_setup.sql
+- supabase_push_setup.sql
+
+ATUALIZAÇÃO:
+1. Copie/substitua estes arquivos no projeto local.
+2. npm install
+3. npm run build
+4. git add .
+5. git commit -m "Corrige resumo de estoque e historico de lotes"
+6. git push
+
+A Vercel conectada ao GitHub fará o deploy automaticamente.

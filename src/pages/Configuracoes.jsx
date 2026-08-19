@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, BellOff, Home, Info, LogOut, Shield, Smartphone, User } from "lucide-react";
+import { Bell, BellOff, Home, Info, LogOut, Send, Shield, Smartphone, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import BottomMenu from "../components/BottomMenu";
 import { supabase } from "../services/supabase";
@@ -11,6 +11,7 @@ export default function Configuracoes() {
   const [diasAlerta, setDiasAlerta] = useState(diasAlertaSalvos());
   const [pushStatus, setPushStatus] = useState("loading");
   const [processandoPush, setProcessandoPush] = useState(false);
+  const [testandoPush, setTestandoPush] = useState(false);
 
   useEffect(() => {
     async function carregar() {
@@ -72,6 +73,33 @@ export default function Configuracoes() {
     }
   }
 
+  async function testarNotificacao() {
+    if (pushStatus !== "enabled") {
+      alert("Ative os alertas no celular antes de fazer o teste.");
+      return;
+    }
+
+    setTestandoPush(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error("Sua sessão expirou. Faça login novamente.");
+
+      const response = await fetch("/api/test-push", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Não foi possível enviar a notificação de teste.");
+
+      alert("Teste enviado. Feche/minimize o app e confira a notificação do celular.");
+    } catch (error) {
+      alert(error.message || "Não foi possível testar a notificação.");
+    } finally {
+      setTestandoPush(false);
+    }
+  }
+
   async function sair() {
     await supabase.auth.signOut();
     navigate("/login");
@@ -115,6 +143,17 @@ export default function Configuracoes() {
             {processandoPush ? "Aguarde..." : ativo ? "Desativar alertas no celular" : "Ativar alertas no celular"}
           </button>
 
+          {ativo && (
+            <button
+              onClick={testarNotificacao}
+              disabled={testandoPush}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#5B5CE2] bg-white p-4 font-bold text-[#4A4BCB] disabled:opacity-50"
+            >
+              <Send size={20} />
+              {testandoPush ? "Enviando teste..." : "Testar notificação agora"}
+            </button>
+          )}
+
           <p className="mt-3 text-xs text-gray-500">
             {ativo && "Ativado. O celular pode receber o aviso diário mesmo com o app fechado."}
             {bloqueado && "As notificações estão bloqueadas nas permissões do navegador/celular."}
@@ -127,7 +166,7 @@ export default function Configuracoes() {
           <div className="flex items-center gap-3 border-b p-4"><User className="text-[#5B5CE2]" /><div><h2 className="font-bold">Usuária</h2><p className="text-sm text-gray-500">Conta protegida pelo Supabase</p></div></div>
           <div className="flex items-center gap-3 border-b p-4"><Smartphone className="text-[#5B5CE2]" /><div><h2 className="font-bold">Aplicativo</h2><p className="text-sm text-gray-500">Despensa NX instalada como PWA</p></div></div>
           <div className="flex items-center gap-3 border-b p-4"><Shield className="text-[#5B5CE2]" /><div><h2 className="font-bold">Separado do Inventário NX</h2><p className="text-sm text-gray-500">Usa tabelas próprias e não altera os produtos do sistema antigo.</p></div></div>
-          <div className="flex items-center gap-3 p-4"><Info className="text-[#5B5CE2]" /><div><h2 className="font-bold">Versão</h2><p className="text-sm text-gray-500">1.2.0 • Entradas/lotes + Push</p></div></div>
+          <div className="flex items-center gap-3 p-4"><Info className="text-[#5B5CE2]" /><div><h2 className="font-bold">Versão</h2><p className="text-sm text-gray-500">1.3.0 • Lotes resumidos + Histórico + Push</p></div></div>
         </section>
 
         <section className="rounded-3xl bg-white p-5 text-center shadow-sm">
