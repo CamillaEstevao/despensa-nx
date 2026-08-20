@@ -19,7 +19,8 @@ function diffDays(dateString, todayString) {
 function notificationBody(items, alertDays) {
   if (items.length === 1) {
     const item = items[0];
-    const nome = item.marca ? `${item.nome} (${item.marca})` : item.nome;
+    const principal = item.produto_base || item.nome;
+    const nome = item.marca ? `${principal} (${item.marca})` : principal;
     if (item.days < 0) return `${nome} já venceu.`;
     if (item.days === 0) return `${nome} vence hoje.`;
     if (item.days === 1) return `${nome} vence amanhã.`;
@@ -78,7 +79,7 @@ export default async function handler(req, res) {
 
   const { data: products, error: productError } = await supabase
     .from("lar_produtos")
-    .select("id,user_id,nome,marca,quantidade,vencimento")
+    .select("id,user_id,nome,produto_base,marca,quantidade,vencimento")
     .not("vencimento", "is", null)
     .gt("quantidade", 0)
     .lte("vencimento", endDate.toISOString().slice(0, 10));

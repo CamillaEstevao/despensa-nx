@@ -1,24 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   Camera,
   ChevronDown,
   ChevronUp,
-  Clock3,
   Image,
   Layers3,
+  Link2,
   Package,
   Pencil,
   Plus,
   ScanLine,
   Search,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import BottomMenu from "../components/BottomMenu";
 import { supabase } from "../services/supabase";
-import { agruparProdutos, quantidadeOriginal, quantidadeRestante } from "../utils/produtos";
+import {
+  agruparProdutos,
+  descricaoLote,
+  quantidadeOriginal,
+  quantidadeRestante,
+  similaridadeProduto,
+} from "../utils/produtos";
 import {
   diasAlertaSalvos,
   formatarDataBR,
@@ -32,8 +39,6 @@ const UNIDADES = [
   ["unidade", "Unidade"], ["pacote", "Pacote"], ["kit", "Kit"], ["kg", "Kg"],
   ["g", "Gramas"], ["litro", "Litro"], ["ml", "mL"], ["caixa", "Caixa"], ["duzia", "Dúzia"],
 ];
-
-
 const UNIDADES_INTEIRAS = new Set(["unidade", "kit", "caixa", "duzia"]);
 
 function passoQuantidade(unidade) {
@@ -66,6 +71,7 @@ export default function Produtos() {
   const [busca, setBusca] = useState("");
   const [categoriaFiltro, setCategoriaFiltro] = useState("Todos");
 
+  const [produtoBase, setProdutoBase] = useState("");
   const [nome, setNome] = useState("");
   const [marca, setMarca] = useState("");
   const [codigoBarras, setCodigoBarras] = useState("");
@@ -80,6 +86,11 @@ export default function Produtos() {
   const [foto, setFoto] = useState("");
   const [arquivo, setArquivo] = useState(null);
   const [preview, setPreview] = useState("");
+
+  const [grupoOrganizando, setGrupoOrganizando] = useState(null);
+  const [grupoDestinoChave, setGrupoDestinoChave] = useState("");
+  const [nomeFinalAgrupado, setNomeFinalAgrupado] = useState("");
+  const [salvandoAgrupamento, setSalvandoAgrupamento] = useState(false);
 
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
@@ -118,13 +129,26 @@ export default function Produtos() {
     }
   }
 
+  function preencherPeloGrupo(grupo, preencherVariacao = false) {
+    const referencia = grupo?.lotesAtivos?.[0] || grupo?.lotes?.[0];
+    if (!grupo || !referencia) return;
+    setProdutoBase(grupo.nome || "");
+    setNome(preencherVariacao ? descricaoLote(referencia) : "");
+    setCategoria(referencia.categoria || "Despensa");
+    setUnidadeMedida(referencia.unidade_medida || "unidade");
+    setEstoqueMinimo(String(referencia.estoque_minimo ?? 1));
+    setFoto(referencia.foto || "");
+    setPreview(referencia.foto || "");
+  }
+
   function tratarCodigoLido(codigo) {
     pararScanner();
     setEscaneando(false);
     const encontrado = lotes.find((lote) => String(lote.codigo_barras || "") === String(codigo));
     limparForm(false);
     if (encontrado) {
-      setNome(encontrado.nome || "");
+      setProdutoBase(encontrado.produto_base || encontrado.nome || "");
+      setNome(descricaoLote(encontrado));
       setMarca(encontrado.marca || "");
       setCategoria(encontrado.categoria || "Despensa");
       setUnidadeMedida(encontrado.unidade_medida || "unidade");
@@ -153,7 +177,7 @@ export default function Produtos() {
   }
 
   function limparForm(fechar = true) {
-    setNome(""); setMarca(""); setCodigoBarras(""); setQuantidadeOriginalForm(""); setQuantidadeAtual("");
+    setProdutoBase(""); setNome(""); setMarca(""); setCodigoBarras(""); setQuantidadeOriginalForm(""); setQuantidadeAtual("");
     setUnidadeMedida("unidade"); setCategoria("Despensa"); setVencimento(""); setDataCompra(hojeISO());
     setEstoqueMinimo("1"); setObservacao(""); setFoto(""); setArquivo(null); setPreview(""); setEditando(null); setSalvando(false);
     if (fechar) setAbrirForm(false);
@@ -161,17 +185,7 @@ export default function Produtos() {
 
   function abrirNovaEntrada(grupo = null) {
     limparForm(false);
-    if (grupo) {
-      const referencia = grupo.lotesAtivos[0] || grupo.lotes[0];
-      setNome(grupo.nome || "");
-      setMarca(referencia?.marca || "");
-      setCategoria(referencia?.categoria || "Despensa");
-      setUnidadeMedida(referencia?.unidade_medida || "unidade");
-      setEstoqueMinimo(String(referencia?.estoque_minimo ?? 1));
-      setFoto(referencia?.foto || "");
-      setPreview(referencia?.foto || "");
-      setCodigoBarras(referencia?.codigo_barras || "");
-    }
+    if (grupo) preencherPeloGrupo(grupo, true);
     setAbrirForm(true);
   }
 
@@ -179,7 +193,9 @@ export default function Produtos() {
     setEditando(lote);
     const atual = quantidadeRestante(lote);
     const original = quantidadeOriginal(lote);
-    setNome(lote.nome || ""); setMarca(lote.marca || ""); setCodigoBarras(lote.codigo_barras || "");
+    setProdutoBase(lote.produto_base || lote.nome || "");
+    setNome(descricaoLote(lote));
+    setMarca(lote.marca || ""); setCodigoBarras(lote.codigo_barras || "");
     setQuantidadeOriginalForm(String(original)); setQuantidadeAtual(String(atual));
     setUnidadeMedida(lote.unidade_medida || "unidade"); setCategoria(lote.categoria || "Despensa");
     setVencimento(lote.vencimento || ""); setDataCompra(lote.data_compra || String(lote.created_at || "").slice(0, 10) || hojeISO());
@@ -188,19 +204,29 @@ export default function Produtos() {
   }
 
   async function salvarEntrada() {
-    if (!nome.trim()) return alert("Digite o nome do produto.");
+    if (!produtoBase.trim()) return alert("Digite o produto principal.");
     if (quantidadeAtual === "" || Number(quantidadeAtual) < 0) return alert("Informe a quantidade que ainda resta.");
     if (quantidadeOriginalForm === "" || Number(quantidadeOriginalForm) < 0) return alert("Informe a quantidade comprada.");
     setSalvando(true);
 
     try {
       const fotoFinal = await enviarFoto();
+      const nomeLote = nome.trim() || produtoBase.trim();
       const payload = {
-        nome: nome.trim(), marca: marca.trim() || null, codigo_barras: codigoBarras.trim() || null,
-        quantidade: Number(quantidadeAtual || 0), quantidade_original: Number(quantidadeOriginalForm || 0),
-        unidade_medida: unidadeMedida, categoria, vencimento: vencimento || null, data_compra: dataCompra || hojeISO(),
-        estoque_minimo: Number(estoqueMinimo || 0), observacao: observacao.trim() || null,
-        foto: fotoFinal || foto || null, updated_at: new Date().toISOString(),
+        produto_base: produtoBase.trim(),
+        nome: nomeLote,
+        marca: marca.trim() || null,
+        codigo_barras: codigoBarras.trim() || null,
+        quantidade: Number(quantidadeAtual || 0),
+        quantidade_original: Number(quantidadeOriginalForm || 0),
+        unidade_medida: unidadeMedida,
+        categoria,
+        vencimento: vencimento || null,
+        data_compra: dataCompra || hojeISO(),
+        estoque_minimo: Number(estoqueMinimo || 0),
+        observacao: observacao.trim() || null,
+        foto: fotoFinal || foto || null,
+        updated_at: new Date().toISOString(),
       };
 
       if (editando?.id) {
@@ -214,7 +240,7 @@ export default function Produtos() {
       }
       limparForm();
     } catch (error) {
-      alert(`Não foi possível salvar: ${error.message}\n\nSe o erro citar quantidade_original ou data_compra, execute o arquivo supabase_lotes_setup.sql no Supabase.`);
+      alert(`Não foi possível salvar: ${error.message}\n\nSe o erro citar produto_base, execute supabase_produto_principal_setup.sql no Supabase.`);
       setSalvando(false);
     }
   }
@@ -241,10 +267,30 @@ export default function Produtos() {
     setHistoricosAbertos((atual) => atual.includes(chave) ? atual.filter((c) => c !== chave) : [...atual, chave]);
   }
 
-  const grupos = agruparProdutos(lotes)
+  const todosGrupos = useMemo(() => agruparProdutos(lotes), [lotes]);
+
+  const sugestoesProdutos = useMemo(() => {
+    const q = produtoBase.trim();
+    if (q.length < 2) return [];
+    return todosGrupos
+      .map((grupo) => {
+        const nomeGrupo = grupo.nome.toLocaleLowerCase("pt-BR");
+        const buscaLower = q.toLocaleLowerCase("pt-BR");
+        const score = nomeGrupo.includes(buscaLower) || buscaLower.includes(nomeGrupo)
+          ? 2
+          : similaridadeProduto(q, grupo.nome);
+        return { grupo, score };
+      })
+      .filter(({ grupo, score }) => score >= 0.5 && grupo.nome.toLocaleLowerCase("pt-BR") !== q.toLocaleLowerCase("pt-BR"))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(({ grupo }) => grupo);
+  }, [produtoBase, todosGrupos]);
+
+  const grupos = todosGrupos
     .filter((grupo) => {
       const termo = busca.trim().toLowerCase();
-      const texto = `${grupo.nome} ${grupo.marcas.join(" ")} ${grupo.lotes.map((l) => l.marca || "").join(" ")}`.toLowerCase();
+      const texto = `${grupo.nome} ${grupo.marcas.join(" ")} ${grupo.lotes.map((l) => `${l.nome || ""} ${l.marca || ""}`).join(" ")}`.toLowerCase();
       const categoriaOk = categoriaFiltro === "Todos" || grupo.lotes.some((l) => l.categoria === categoriaFiltro);
       return texto.includes(termo) && categoriaOk;
     })
@@ -252,23 +298,61 @@ export default function Produtos() {
 
   const categoriasFiltro = ["Todos", ...CATEGORIAS];
 
-  function renderLote(lote, historico = false) {
+  function abrirOrganizador(grupo) {
+    const primeiroDestino = todosGrupos.find((g) => g.chave !== grupo.chave);
+    if (!primeiroDestino) return alert("Cadastre outro produto antes de usar o agrupamento.");
+    setGrupoOrganizando(grupo);
+    setGrupoDestinoChave(primeiroDestino.chave);
+    setNomeFinalAgrupado(primeiroDestino.nome);
+  }
+
+  function mudarDestinoAgrupamento(chave) {
+    setGrupoDestinoChave(chave);
+    const destino = todosGrupos.find((g) => g.chave === chave);
+    if (destino) setNomeFinalAgrupado(destino.nome);
+  }
+
+  async function salvarAgrupamento() {
+    const destino = todosGrupos.find((g) => g.chave === grupoDestinoChave);
+    const nomeFinal = nomeFinalAgrupado.trim();
+    if (!grupoOrganizando || !destino) return;
+    if (!nomeFinal) return alert("Digite o nome que ficará no card.");
+    setSalvandoAgrupamento(true);
+    const ids = [...grupoOrganizando.lotes, ...destino.lotes].map((l) => l.id);
+    const { data, error } = await supabase
+      .from("lar_produtos")
+      .update({ produto_base: nomeFinal, updated_at: new Date().toISOString() })
+      .in("id", ids)
+      .select("*");
+    if (error) {
+      setSalvandoAgrupamento(false);
+      return alert(`Não foi possível agrupar: ${error.message}`);
+    }
+    const atualizados = new Map((data || []).map((l) => [l.id, l]));
+    setLotes((lista) => lista.map((l) => atualizados.get(l.id) || l));
+    setGrupoOrganizando(null);
+    setSalvandoAgrupamento(false);
+  }
+
+  function renderLote(lote, historico = false, usarPrimeiro = false) {
     const status = statusVencimento(lote.vencimento, diasAlerta);
     const original = quantidadeOriginal(lote);
     const atual = quantidadeRestante(lote);
+    const descricao = descricaoLote(lote);
     return (
-      <div key={lote.id} className={`rounded-2xl border p-3 ${historico ? "bg-gray-50 opacity-80" : "bg-white"}`}>
+      <div key={lote.id} className={`rounded-2xl border p-3 ${historico ? "bg-gray-50 opacity-80" : usarPrimeiro ? "border-amber-200 bg-amber-50/40" : "bg-white"}`}>
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="font-bold">{lote.marca || "Sem marca"}</p>
+            {descricao && <p className="truncate text-xs font-semibold text-gray-600">{descricao}</p>}
             <p className="text-xs text-gray-500">Compra de {formatarDataBR(lote.data_compra || String(lote.created_at || "").slice(0, 10))}</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-bold ${historico ? "bg-gray-200 text-gray-600" : "bg-[#EEEFFF] text-[#4A4BCB]"}`}>
-            {historico ? "Finalizado" : "Lote atual"}
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${historico ? "bg-gray-200 text-gray-600" : usarPrimeiro ? "bg-amber-100 text-amber-700" : "bg-[#EEEFFF] text-[#4A4BCB]"}`}>
+            {historico ? "Finalizado" : usarPrimeiro ? "Usar primeiro" : "Em estoque"}
           </span>
         </div>
 
-        <div className="mt-3 rounded-2xl bg-gray-50 p-3">
+        <div className="mt-3 rounded-2xl bg-white/80 p-3">
           <p className="text-xs text-gray-500">{historico ? "Quantidade ao finalizar" : "Quantidade restante"}</p>
           <p className="text-xl font-bold text-[#4A4BCB]">
             {formatarQuantidade(atual)} {rotuloUnidade(lote.unidade_medida, atual)}
@@ -315,7 +399,7 @@ export default function Produtos() {
           <div>
             <p className="text-sm text-white/70">Despensa NX</p>
             <h1 className="text-3xl font-bold">Produtos</h1>
-            <p className="text-sm text-white/70">{agruparProdutos(lotes).length} produtos • {lotes.filter((l) => quantidadeRestante(l) > 0).length} lotes ativos</p>
+            <p className="text-sm text-white/70">{todosGrupos.length} produtos • {lotes.filter((l) => quantidadeRestante(l) > 0).length} compras em estoque</p>
           </div>
         </div>
       </header>
@@ -352,7 +436,7 @@ export default function Produtos() {
                         <p className="truncate text-sm text-[#5B5CE2]">{grupo.marcas.length ? grupo.marcas.join(" • ") : "Sem marca no estoque atual"}</p>
                         <p className="mt-2 font-bold text-gray-800">Em casa: {resumoEstoque(grupo)}</p>
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-                          <span>{grupo.totalLotesAtivos} {grupo.totalLotesAtivos === 1 ? "lote ativo" : "lotes ativos"}</span>
+                          <span>{grupo.totalLotesAtivos} {grupo.totalLotesAtivos === 1 ? "compra ativa" : "compras ativas"}</span>
                           {grupo.proximoVencimento && <span>Próx. venc.: {formatarDataBR(grupo.proximoVencimento)}</span>}
                         </div>
                       </div>
@@ -360,7 +444,7 @@ export default function Produtos() {
 
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <button onClick={() => alternarGrupo(grupo.chave)} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#5B5CE2] p-3 font-bold text-[#4A4BCB]">
-                        <Layers3 size={18} /> {expandido ? "Ocultar lotes" : "Ver lotes"} {expandido ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+                        <Layers3 size={18} /> {expandido ? "Ocultar estoque" : "Ver estoque"} {expandido ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
                       </button>
                       <button onClick={() => abrirNovaEntrada(grupo)} className="flex items-center justify-center gap-2 rounded-2xl bg-[#5B5CE2] p-3 font-bold text-white"><Plus size={18} /> Nova compra</button>
                     </div>
@@ -368,10 +452,23 @@ export default function Produtos() {
 
                   {expandido && (
                     <div className="border-t bg-[#FAFAFE] p-3">
+                      {grupo.lotesAtivos.length > 1 && (
+                        <div className="mb-3 flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-xs text-amber-800">
+                          <Sparkles size={17} className="mt-0.5 shrink-0" />
+                          <span>As compras estão ordenadas por validade. A marcada como <strong>Usar primeiro</strong> é a que vence antes.</span>
+                        </div>
+                      )}
+
                       {grupo.lotesAtivos.length === 0 ? (
-                        <div className="rounded-2xl bg-white p-4 text-center text-sm text-gray-500">Nenhum lote com estoque. Use “Nova compra” para adicionar.</div>
+                        <div className="rounded-2xl bg-white p-4 text-center text-sm text-gray-500">Nenhuma compra com estoque. Use “Nova compra” para adicionar.</div>
                       ) : (
-                        <div className="space-y-3">{grupo.lotesAtivos.map((lote) => renderLote(lote, false))}</div>
+                        <div className="space-y-3">{grupo.lotesAtivos.map((lote) => renderLote(lote, false, lote.id === grupo.loteUsarPrimeiroId))}</div>
+                      )}
+
+                      {todosGrupos.length > 1 && (
+                        <button onClick={() => abrirOrganizador(grupo)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#5B5CE2] bg-white p-3 text-sm font-bold text-[#4A4BCB]">
+                          <Link2 size={17} /> Unir com outro produto
+                        </button>
                       )}
 
                       {grupo.totalHistorico > 0 && (
@@ -380,7 +477,7 @@ export default function Produtos() {
                             <span className="flex items-center gap-2"><Archive size={18} /> Histórico ({grupo.totalHistorico})</span>
                             {historicoExpandido ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                           </button>
-                          {historicoExpandido && <div className="mt-3 space-y-3">{grupo.lotesHistorico.map((lote) => renderLote(lote, true))}</div>}
+                          {historicoExpandido && <div className="mt-3 space-y-3">{grupo.lotesHistorico.map((lote) => renderLote(lote, true, false))}</div>}
                         </div>
                       )}
                     </div>
@@ -399,7 +496,7 @@ export default function Produtos() {
           <div className="w-full max-w-md rounded-3xl bg-white p-4">
             <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-bold">Ler código de barras</h2><button onClick={() => { pararScanner(); setEscaneando(false); }}><X /></button></div>
             <video ref={videoRef} className="h-72 w-full rounded-2xl bg-black object-cover" muted playsInline />
-            <p className="mt-3 text-center text-sm text-gray-500">Se o código já existir, os dados do produto serão preenchidos e uma nova compra será criada.</p>
+            <p className="mt-3 text-center text-sm text-gray-500">Se o código já existir, o produto principal será reconhecido e uma nova compra será criada.</p>
           </div>
         </div>
       )}
@@ -408,7 +505,7 @@ export default function Produtos() {
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center">
           <div className="max-h-[95vh] w-full overflow-y-auto rounded-t-3xl bg-white p-4 pb-8 sm:max-w-md sm:rounded-3xl">
             <div className="mb-4 flex items-center justify-between">
-              <div><h2 className="text-xl font-bold">{editando ? "Editar compra" : "Nova compra"}</h2><p className="text-sm text-gray-500">Cada compra mantém sua própria marca, quantidade e vencimento.</p></div>
+              <div><h2 className="text-xl font-bold">{editando ? "Editar compra" : "Nova compra"}</h2><p className="text-sm text-gray-500">Um produto pode ter várias compras, marcas e validades.</p></div>
               <button onClick={() => limparForm()}><X /></button>
             </div>
 
@@ -419,8 +516,31 @@ export default function Produtos() {
                 <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 font-semibold"><Image size={20} /> Galeria<input type="file" accept="image/*" hidden onChange={selecionarFoto} /></label>
               </div>
 
-              <div><label className="mb-1 block text-sm font-bold text-gray-600">Produto *</label><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Arroz" className="w-full rounded-xl border p-3" /></div>
-              <div><label className="mb-1 block text-sm font-bold text-gray-600">Marca</label><input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Ex.: Camil" className="w-full rounded-xl border p-3" /></div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-gray-600">Produto principal *</label>
+                <input value={produtoBase} onChange={(e) => setProdutoBase(e.target.value)} placeholder="Ex.: Peito de frango" className="w-full rounded-xl border p-3" />
+                <p className="mt-1 text-xs text-gray-400">É o nome que aparecerá no card principal.</p>
+                {sugestoesProdutos.length > 0 && !editando && (
+                  <div className="mt-2 rounded-2xl border border-[#DCDDFE] bg-[#F7F7FF] p-2">
+                    <p className="mb-2 flex items-center gap-1 text-xs font-bold text-[#4A4BCB]"><Sparkles size={14} /> Já existe algo parecido?</p>
+                    <div className="space-y-1">
+                      {sugestoesProdutos.map((grupo) => (
+                        <button key={grupo.chave} type="button" onClick={() => preencherPeloGrupo(grupo, false)} className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2 text-left text-sm shadow-sm">
+                          <span className="font-semibold">{grupo.nome}</span><span className="text-xs font-bold text-[#5B5CE2]">Usar este</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold text-gray-600">Variação / embalagem <span className="font-normal text-gray-400">(opcional)</span></label>
+                <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Filé em bandeja 1 kg" className="w-full rounded-xl border p-3" />
+                <p className="mt-1 text-xs text-gray-400">Use só quando precisar diferenciar a embalagem ou o tipo.</p>
+              </div>
+
+              <div><label className="mb-1 block text-sm font-bold text-gray-600">Marca</label><input value={marca} onChange={(e) => setMarca(e.target.value)} placeholder="Ex.: Seara" className="w-full rounded-xl border p-3" /></div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-sm font-bold text-gray-600">Data da compra</label><input type="date" value={dataCompra} onChange={(e) => setDataCompra(e.target.value)} className="w-full rounded-xl border p-3" /></div>
@@ -442,6 +562,39 @@ export default function Produtos() {
 
               <button onClick={salvarEntrada} disabled={salvando} className="w-full rounded-2xl bg-[#5B5CE2] p-4 font-bold text-white disabled:opacity-50">{salvando ? "Salvando..." : editando ? "Salvar alterações" : "Adicionar compra"}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {grupoOrganizando && (
+        <div className="fixed inset-0 z-[130] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4">
+          <div className="w-full rounded-t-3xl bg-white p-5 sm:max-w-md sm:rounded-3xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div><h2 className="text-xl font-bold">Unir produtos</h2><p className="text-sm text-gray-500">Junte nomes diferentes que representam o mesmo alimento.</p></div>
+              <button onClick={() => setGrupoOrganizando(null)}><X /></button>
+            </div>
+
+            <div className="rounded-2xl bg-[#F7F7FF] p-3 text-sm">
+              <span className="text-gray-500">Você está organizando:</span>
+              <p className="font-bold text-[#4A4BCB]">{grupoOrganizando.nome}</p>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-bold text-gray-600">Unir com</label>
+              <select value={grupoDestinoChave} onChange={(e) => mudarDestinoAgrupamento(e.target.value)} className="w-full rounded-xl border p-3">
+                {todosGrupos.filter((g) => g.chave !== grupoOrganizando.chave).map((g) => <option key={g.chave} value={g.chave}>{g.nome}</option>)}
+              </select>
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-bold text-gray-600">Nome que ficará no card</label>
+              <input value={nomeFinalAgrupado} onChange={(e) => setNomeFinalAgrupado(e.target.value)} placeholder="Ex.: Peito de frango" className="w-full rounded-xl border p-3" />
+              <p className="mt-1 text-xs text-gray-400">As marcas, quantidades, fotos e validades continuam separadas dentro do estoque.</p>
+            </div>
+
+            <button onClick={salvarAgrupamento} disabled={salvandoAgrupamento} className="mt-5 w-full rounded-2xl bg-[#5B5CE2] p-4 font-bold text-white disabled:opacity-50">
+              {salvandoAgrupamento ? "Unindo..." : "Unir produtos"}
+            </button>
           </div>
         </div>
       )}

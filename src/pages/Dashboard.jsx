@@ -3,7 +3,7 @@ import { AlertTriangle, BellRing, CalendarClock, ChevronRight, Layers3, Package,
 import { Link } from "react-router-dom";
 import BottomMenu from "../components/BottomMenu";
 import { supabase } from "../services/supabase";
-import { agruparProdutos, gruposParaCompra } from "../utils/produtos";
+import { agruparProdutos, gruposParaCompra, nomePrincipal } from "../utils/produtos";
 import { diasAlertaSalvos, formatarDataBR, formatarQuantidade, rotuloUnidade, statusVencimento } from "../utils/vencimento";
 
 export default function Dashboard() {
@@ -43,7 +43,7 @@ export default function Dashboard() {
         <p className="mt-2 max-w-md text-sm text-white/80">Cada compra fica separada por marca, quantidade restante e vencimento.</p>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Link to="/produtos" className="flex items-center justify-between rounded-2xl bg-white/12 p-4"><div><p className="text-xs text-white/70">Produtos</p><strong className="text-2xl">{grupos.length}</strong></div><Package /></Link>
-          <Link to="/produtos" className="flex items-center justify-between rounded-2xl bg-white/12 p-4"><div><p className="text-xs text-white/70">Entradas/lotes</p><strong className="text-2xl">{lotes.length}</strong></div><Layers3 /></Link>
+          <Link to="/produtos" className="flex items-center justify-between rounded-2xl bg-white/12 p-4"><div><p className="text-xs text-white/70">Compras registradas</p><strong className="text-2xl">{lotes.length}</strong></div><Layers3 /></Link>
         </div>
       </header>
 
@@ -65,8 +65,8 @@ export default function Dashboard() {
           {carregando ? <p className="py-5 text-center text-gray-400">Carregando...</p> : alertasOrdenados.length === 0 ? <div className="rounded-2xl bg-blue-50 p-4 text-blue-800">Nenhuma entrada próxima do vencimento.</div> : (
             <div className="space-y-3">{alertasOrdenados.map((lote) => { const status = statusVencimento(lote.vencimento, diasAlerta); return (
               <Link key={lote.id} to="/vencimentos" className={`flex items-center gap-3 rounded-2xl border p-3 ${status.corFundo} ${status.corBorda}`}>
-                <img src={lote.foto || "/favicon.svg"} alt={lote.nome} className="h-14 w-14 rounded-xl bg-white object-cover" />
-                <div className="min-w-0 flex-1"><h3 className="truncate font-bold">{lote.nome}</h3><p className="truncate text-xs text-gray-500">{lote.marca || "Sem marca"} • restam {formatarQuantidade(lote.quantidade)} {rotuloUnidade(lote.unidade_medida, lote.quantidade)}</p><p className={`mt-1 text-sm font-bold ${status.corTexto}`}>{status.texto} • {formatarDataBR(lote.vencimento)}</p></div>
+                <img src={lote.foto || "/favicon.svg"} alt={nomePrincipal(lote)} className="h-14 w-14 rounded-xl bg-white object-cover" />
+                <div className="min-w-0 flex-1"><h3 className="truncate font-bold">{nomePrincipal(lote)}</h3><p className="truncate text-xs text-gray-500">{lote.marca || "Sem marca"} • restam {formatarQuantidade(lote.quantidade)} {rotuloUnidade(lote.unidade_medida, lote.quantidade)}</p><p className={`mt-1 text-sm font-bold ${status.corTexto}`}>{status.texto} • {formatarDataBR(lote.vencimento)}</p></div>
               </Link>); })}</div>
           )}
         </section>

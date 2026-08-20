@@ -1,0 +1,27 @@
+DESPENSA NX v1.5 — PRODUTO PRINCIPAL + COMPRAS/VALIDADES
+
+O que mudou:
+- Um único card por produto principal.
+- Cada compra continua separada por marca, quantidade e vencimento.
+- Botão “Ver estoque” no lugar de “Ver lotes”.
+- A compra que vence primeiro recebe “Usar primeiro”.
+- Nova compra dentro do card cria outra compra/validade sem duplicar o produto principal.
+- Ao digitar um produto novo, o app sugere produtos parecidos já existentes.
+- “Unir com outro produto” permite corrigir duplicados antigos sem apagar dados.
+- Campo “Variação / embalagem” é opcional (ex.: Filé em bandeja 1 kg).
+
+ANTES DE PUBLICAR:
+1. No Supabase > SQL Editor, execute supabase_produto_principal_setup.sql UMA VEZ.
+2. Copie os arquivos desta versão por cima da pasta atual do projeto. NÃO apague a pasta .git.
+3. git add .
+4. git commit -m "Melhora agrupamento de produtos e validades"
+5. git push
+
+COMO JUNTAR OS DOIS FRANGOS JÁ CADASTRADOS:
+1. Abra Produtos > Freezer.
+2. Em um dos cards, toque “Ver estoque”.
+3. Toque “Unir com outro produto”.
+4. Selecione o outro card do frango.
+5. Em “Nome que ficará no card”, digite: Peito de frango
+6. Toque “Unir produtos”.
+As duas compras/validades passam a aparecer dentro de um único card, sem perder quantidade, marca, foto ou vencimento.

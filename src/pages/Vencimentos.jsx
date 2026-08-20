@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BellRing, CalendarDays, Search } from "lucide-react";
 import BottomMenu from "../components/BottomMenu";
 import { supabase } from "../services/supabase";
+import { nomePrincipal, descricaoLote } from "../utils/produtos";
 import { diasAlertaSalvos, formatarDataBR, formatarQuantidade, rotuloUnidade, statusVencimento } from "../utils/vencimento";
 
 export default function Vencimentos() {
@@ -25,7 +26,7 @@ export default function Vencimentos() {
 
   const filtrados = lotes.filter((lote) => {
     const status = statusVencimento(lote.vencimento, diasAlerta).chave;
-    const textoOk = `${lote.nome || ""} ${lote.marca || ""}`.toLowerCase().includes(busca.toLowerCase());
+    const textoOk = `${nomePrincipal(lote)} ${descricaoLote(lote)} ${lote.marca || ""}`.toLowerCase().includes(busca.toLowerCase());
     const filtroOk = filtro === "Todos" || (filtro === "Vencidos" && status === "vencido") || (filtro === "Próximos" && ["hoje", "proximo"].includes(status)) || (filtro === "Em dia" && status === "ok");
     return textoOk && filtroOk;
   });
@@ -39,7 +40,7 @@ export default function Vencimentos() {
         <div className="flex gap-2 overflow-x-auto">{["Todos", "Vencidos", "Próximos", "Em dia"].map((item) => <button key={item} onClick={() => setFiltro(item)} className={`whitespace-nowrap rounded-2xl px-4 py-2 text-sm font-bold ${filtro === item ? "bg-[#5B5CE2] text-white" : "bg-white text-gray-600 shadow-sm"}`}>{item}</button>)}</div>
         {filtrados.length === 0 ? <div className="rounded-3xl bg-white p-8 text-center shadow-sm"><CalendarDays className="mx-auto mb-3 text-gray-300" size={44} /><h2 className="font-bold">Nenhuma entrada neste filtro</h2><p className="text-sm text-gray-500">Entradas zeradas não aparecem nos vencimentos.</p></div> : (
           <div className="space-y-3">{filtrados.map((lote) => { const status = statusVencimento(lote.vencimento, diasAlerta); return (
-            <article key={lote.id} className={`rounded-3xl border bg-white p-4 shadow-sm ${status.corBorda}`}><div className="flex gap-4"><img src={lote.foto || "/favicon.svg"} alt={lote.nome} className="h-20 w-20 rounded-2xl bg-gray-100 object-cover" /><div className="min-w-0 flex-1"><h2 className="truncate text-lg font-bold">{lote.nome}</h2><p className="truncate text-sm font-semibold text-[#5B5CE2]">{lote.marca || "Sem marca"}</p><p className="mt-1 text-xs text-gray-500">Restam {formatarQuantidade(lote.quantidade)} {rotuloUnidade(lote.unidade_medida, lote.quantidade)}</p><p className="text-xs text-gray-400">Compra: {formatarDataBR(lote.data_compra || String(lote.created_at || "").slice(0,10))}</p></div></div><div className={`mt-3 rounded-2xl p-3 ${status.corFundo}`}><p className="text-xs text-gray-500">Vencimento</p><div className="flex items-center justify-between gap-3"><strong>{formatarDataBR(lote.vencimento)}</strong><span className={`text-sm font-bold ${status.corTexto}`}>{status.texto}</span></div></div></article>
+            <article key={lote.id} className={`rounded-3xl border bg-white p-4 shadow-sm ${status.corBorda}`}><div className="flex gap-4"><img src={lote.foto || "/favicon.svg"} alt={nomePrincipal(lote)} className="h-20 w-20 rounded-2xl bg-gray-100 object-cover" /><div className="min-w-0 flex-1"><h2 className="truncate text-lg font-bold">{nomePrincipal(lote)}</h2>{descricaoLote(lote) && <p className="truncate text-xs text-gray-500">{descricaoLote(lote)}</p>}<p className="truncate text-sm font-semibold text-[#5B5CE2]">{lote.marca || "Sem marca"}</p><p className="mt-1 text-xs text-gray-500">Restam {formatarQuantidade(lote.quantidade)} {rotuloUnidade(lote.unidade_medida, lote.quantidade)}</p><p className="text-xs text-gray-400">Compra: {formatarDataBR(lote.data_compra || String(lote.created_at || "").slice(0,10))}</p></div></div><div className={`mt-3 rounded-2xl p-3 ${status.corFundo}`}><p className="text-xs text-gray-500">Vencimento</p><div className="flex items-center justify-between gap-3"><strong>{formatarDataBR(lote.vencimento)}</strong><span className={`text-sm font-bold ${status.corTexto}`}>{status.texto}</span></div></div></article>
           ); })}</div>
         )}
       </main><BottomMenu />
